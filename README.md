@@ -280,4 +280,3 @@ Then you can join any number of worker nodes by running the following on each as
 kubeadm join 192.168.30.134:6443 --token abcdef.0123456789abcdef \
         --discovery-token-ca-cert-hash sha256:a60a82ce8612258437f9656bcf7034efb7ffc6c0cc7ec149359a301ca165522f
 ```
-end
