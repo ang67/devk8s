@@ -10,6 +10,32 @@ Here in this lesson we will install kubernetes 1.22 on centos 9
 ```sh
 nc 127.0.0.1 6443
 ```
+
+#### Config réseau
+[lien](https://kubernetes.io/fr/docs/setup/production-environment/tools/kubeadm/install-kubeadm/#permettre-%C3%A0-iptables-de-voir-le-trafic-pont%C3%A9)
+
+```sh
+cat <<EOF | sudo tee /etc/sysctl.d/k8s.conf
+net.bridge.bridge-nf-call-ip6tables = 1
+net.bridge.bridge-nf-call-iptables = 1
+EOF
+sudo sysctl --system
+
+#RROR FileContent--proc-sys-net-ipv4-ip_forward]: /proc/sys/net/ipv4/ip_forward contents are not set to 1
+echo '1' > /proc/sys/net/ipv4/ip_forward
+
+#[ERROR FileExisting-conntrack]: conntrack not found in system path
+yum install conntrack
+#ERROR FileContent--proc-sys-net-bridge-bridge-nf-call-iptables]: /proc/sys/net/bridge/bridge-nf-call-iptables does not exist
+modprobe br_netfilter
+
+# sudo issue
+sudo ln -s /usr/local/bin/kubeadm /usr/bin/
+sudo ln -s /usr/local/bin/kubelet /usr/bin/
+sudo ln -s /usr/local/bin/crictl /usr/bin/
+
+sudo hostnamectl set-hostname control-plane
+```
 #### Installing a container runtime (containerd)
 Typically, you will have to install runc and CNI plugins from their official sites too.
 - Download binary
@@ -182,8 +208,8 @@ curl -L "https://github.com/kubernetes-sigs/cri-tools/releases/download/${CRICTL
 RELEASE="v1.25.2"
 ARCH="amd64"
 cd $DOWNLOAD_DIR
-sudo curl -L --remote-name-all https://dl.k8s.io/release/${RELEASE}/bin/linux/${ARCH}/{kubeadm,kubelet}
-sudo chmod +x {kubeadm,kubelet}
+sudo curl -L --remote-name-all https://dl.k8s.io/release/${RELEASE}/bin/linux/${ARCH}/{kubeadm,kubelet,kubectl}
+sudo chmod +x {{kubeadm,kubelet,kubectl}
 
 RELEASE_VERSION="v0.4.0"
 curl -sSL "https://raw.githubusercontent.com/kubernetes/release/${RELEASE_VERSION}/cmd/kubepkg/templates/latest/deb/kubelet/lib/systemd/system/kubelet.service" | sed "s:/usr/bin:${DOWNLOAD_DIR}:g" | sudo tee /etc/systemd/system/kubelet.service
@@ -194,10 +220,63 @@ curl -sSL "https://raw.githubusercontent.com/kubernetes/release/${RELEASE_VERSIO
 Enable and start kubelet:
 ```sh
 systemctl enable --now kubelet
+sudo systemctl daemon-reload
+sudo systemctl restart kubelet
 ```
 
-/usr is mounted read-only on nodes  troubleshoot
-https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/troubleshooting-kubeadm/#usr-mounted-read-only
 
+preload images
+```sh
+kubeadm config images list
+kubeadm config images pull
+```
+* config
+```sh
+kubeadm config print init-defaults > kubeadm-config.yaml
+```
 
-next https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/#configuring-a-cgroup-driver
+* kubeadm init phase preflight
+
+Using this command you can execute preflight checks on a control-plane node.
+```sh
+kubeadm init phase preflight --config kubeadm-config.yaml
+```
+
+requirement
+diseable swap
+```sh
+sudo swapoff -a
+
+# install socat
+yum install socat
+```
+### init 
+sudo kubeadm init  --config kubeadm-config.yaml
+```
+Your Kubernetes control-plane has initialized successfully!
+
+To start using your cluster, you need to run the following as a regular user:
+
+  mkdir -p $HOME/.kube
+  sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+  sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+Alternatively, if you are the root user, you can run:
+
+  export KUBECONFIG=/etc/kubernetes/admin.conf
+
+You should now deploy a pod network to the cluster.
+kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.24.1/manifests/tigera-operator.yaml
+
+kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.24.1/manifests/custom-resources.yaml
+
+watch kubectl get pods -n kube-system
+
+Run "kubectl apply -f https://docs.projectcalico.org/v3.8/manifests/calico.yaml" with one of the options listed at:
+  https://kubernetes.io/docs/concepts/cluster-administration/addons/
+
+Then you can join any number of worker nodes by running the following on each as root:
+
+kubeadm join 192.168.30.134:6443 --token abcdef.0123456789abcdef \
+        --discovery-token-ca-cert-hash sha256:a60a82ce8612258437f9656bcf7034efb7ffc6c0cc7ec149359a301ca165522f
+```
